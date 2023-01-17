@@ -1,0 +1,82 @@
+---
+version: '3'
+
+services:
+  app:
+    # https://github.com/linuxserver/docker-nextcloud/releases
+    image: lscr.io/linuxserver/nextcloud:${NEXTCLOUD_VERSION:-latest}
+    container_name: nextcloud_app
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${NEXTCLOUD_PATH}/config:/config
+      - ${NEXTCLOUD_PATH}/data:/data
+      - /etc/localtime:/etc/localtime:ro
+    # Ports can be deleted once we confirm Cloudflare (i.e. reverse proxy out through Cloudflare tunnel)
+    ports:
+      - 3443:443/tcp
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - redis
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    
+  mariadb:
+    # https://github.com/linuxserver/docker-mariadb/releases
+    image: lscr.io/linuxserver/mariadb:${MARIADB_VERSION:-latest}
+    container_name: nextcloud_mariadb
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - MYSQL_ROOT_PASSWORD=${NEXTCLOUD_MARIADB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_PASSWORD=${NEXTCLOUD_MARIADB_PASSWORD}
+    volumes:
+      - ${NEXTCLOUD_PATH}/mariadb:/config
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  redis:
+    # https://hub.docker.com/_/redis?tab=tags
+    image: redis:${REDIS_VERSION:-latest}
+    container_name: nextcloud_redis
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  cloudflared:
+    # https://github.com/cloudflare/cloudflared/releases
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
+    container_name: nextcloud_cloudflared_tunnel
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    ## https://containrrr.dev/watchtower/
+    image: containrrr/watchtower:${WATCHTOWER_VERSION:-latest}
+    container_name: nextcloud_watchtower
+    environment:
+      - WATCHTOWER_CLEANUP=${WATCHTOWER_CLEANUP:-false}
+      - WATCHTOWER_LABEL_ENABLE=${WATCHTOWER_LABEL_ENABLE:-false}
+        ## https://pkg.go.dev/github.com/robfig/cron@v1.2.0#hdr-CRON_Expression_Format
+      - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE:-0 0 0 * * *}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
